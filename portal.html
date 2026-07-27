@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Portal 传送门 Demo（离线版）</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+canvas { display: block; }
+
+#crosshair {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 100;
+}
+#crosshair::before, #crosshair::after {
+  content: ''; position: absolute;
+  background: rgba(255,255,255,0.85);
+}
+#crosshair::before { width: 2px; height: 14px; left: -1px; top: -7px; }
+#crosshair::after { width: 14px; height: 2px; left: -7px; top: -1px; }
+
+#hud {
+  position: fixed; bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  color: #fff; font-size: 14px;
+  text-align: center; pointer-events: none; z-index: 100;
+  text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  line-height: 1.8;
+}
+#hud .key {
+  display: inline-block; padding: 2px 8px;
+  background: rgba(255,255,255,0.15); border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.25);
+  font-weight: bold;
+}
+
+#info {
+  position: fixed; top: 20px; left: 50%;
+  transform: translateX(-50%);
+  color: #fff; font-size: 13px;
+  text-align: center; pointer-events: none; z-index: 100;
+  text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  line-height: 1.7;
+}
+#info .blue { color: #4db8ff; font-weight: bold; }
+#info .orange { color: #ff8c42; font-weight: bold; }
+#level-tag { color: #ffd866; font-weight: bold; margin-bottom: 2px; }
+#level-hint { color: #cfeedf; margin-top: 2px; }
+#cube-hint { color: #9fe8b8; margin-top: 2px; min-height: 1em; font-weight: bold; }
+
+#loading {
+  position: fixed; bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  color: #88ccff; font-size: 12px; z-index: 150;
+  pointer-events: none;
+}
+
+#start-screen {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a15 100%);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 200; color: #fff; text-align: center; padding: 20px;
+}
+#start-screen h1 {
+  font-size: 48px; margin-bottom: 10px;
+  background: linear-gradient(135deg, #4db8ff, #ff8c42);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+#start-screen p { color: #aaa; margin-bottom: 30px; font-size: 16px; }
+#start-screen .controls {
+  display: grid; grid-template-columns: auto auto;
+  gap: 8px 20px; margin-bottom: 30px; font-size: 14px;
+}
+#start-screen .controls .label { color: #888; text-align: right; }
+#start-screen .controls kbd {
+  display: inline-block; padding: 3px 10px;
+  background: rgba(255,255,255,0.1); border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.2);
+  font-family: monospace; min-width: 28px; text-align: center;
+}
+#start-btn {
+  padding: 14px 48px; font-size: 18px;
+  background: linear-gradient(135deg, #4db8ff, #4090e0);
+  border: none; border-radius: 8px; color: #fff;
+  cursor: pointer; font-weight: bold;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+#start-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(77,184,255,0.4); }
+.start-sub-btn {
+  margin-top: 14px; padding: 12px 36px; font-size: 16px;
+  background: linear-gradient(135deg, #ff8c42, #e07030);
+  border: none; border-radius: 8px; color: #fff;
+  cursor: pointer; font-weight: bold; transition: transform 0.15s, box-shadow 0.15s;
+}
+.start-sub-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(255,140,66,0.4); }
+
+#err-box {
+  display: none; max-width: 560px; color: #ff8888;
+  font-size: 14px; line-height: 1.7; margin-top: 18px;
+}
+#err-box code { color: #ffcc66; }
+
+#win-box {
+  display: none; position: fixed; top: 84px; left: 50%;
+  transform: translateX(-50%); z-index: 300; text-align: center;
+  pointer-events: none;
+  background: rgba(18,40,34,0.85); border: 1px solid rgba(102,255,204,0.5);
+  border-radius: 12px; padding: 16px 30px; color: #fff;
+  box-shadow: 0 0 30px rgba(102,255,204,0.3);
+}
+#win-box h2 {
+  font-size: 30px; margin-bottom: 6px;
+  background: linear-gradient(135deg, #66ffcc, #4db8ff);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+#win-box p { color: #cfeedf; font-size: 14px; }
+
+#vignette {
+  position: fixed; inset: 0; pointer-events: none; z-index: 90;
+  box-shadow: inset 0 0 220px 70px rgba(0,0,0,0.5);
+}
+
+/* 帧率显示 */
+#fps {
+  position: fixed; top: 12px; right: 14px;
+  color: #b8ff9c; font-family: 'Consolas', 'Menlo', monospace;
+  font-size: 13px; z-index: 100;
+  text-shadow: 0 0 4px rgba(0,0,0,0.8);
+  pointer-events: none; background: rgba(0,0,0,0.35);
+  padding: 3px 8px; border-radius: 4px;
+}
+
+/* 暂停菜单 / 选关面板 */
+#pause-menu, #level-select {
+  position: fixed; inset: 0; z-index: 250;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(10,12,24,0.62); color: #fff; text-align: center;
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+}
+#level-select { z-index: 260; }
+.menu-card {
+  background: rgba(20,24,42,0.92); border: 1px solid rgba(120,160,255,0.35);
+  border-radius: 14px; padding: 28px 34px; min-width: 280px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+}
+.menu-card h2 {
+  font-size: 28px; margin-bottom: 18px;
+  background: linear-gradient(135deg, #4db8ff, #ff8c42);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.menu-btn {
+  display: block; width: 100%; margin: 10px 0; padding: 12px 20px; font-size: 16px;
+  background: linear-gradient(135deg, #4db8ff, #4090e0); border: none; border-radius: 8px;
+  color: #fff; cursor: pointer; font-weight: bold; transition: transform 0.12s, box-shadow 0.12s;
+}
+.menu-btn:hover { transform: scale(1.04); box-shadow: 0 0 24px rgba(77,184,255,0.4); }
+#level-buttons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+#level-buttons .menu-btn { margin: 0; }
+</style>
+</head>
+<body>
+
+<div id="crosshair"></div>
+<div id="vignette"></div>
+<div id="fps"></div>
+
+<div id="info">
+  <div id="level-tag"></div>
+  <div><span class="blue">蓝色传送门</span> = 鼠标左键 &nbsp;&nbsp; <span class="orange">橙色传送门</span> = 鼠标右键</div>
+  <div>传送门可放置在 墙面 / 地面 / 天花板 / 平台 表面 | 进入其中一个门，从另一个门出来</div>
+  <div id="level-hint"></div>
+  <div id="cube-hint"></div>
+</div>
+
+<div id="hud">
+  <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 移动 &nbsp;
+  <span class="key">空格</span> 跳跃 &nbsp;
+  <span class="key">鼠标</span> 视角 &nbsp;
+  <span class="key">Shift</span> 加速 &nbsp;
+  <span class="key">E</span>/<span class="key">Esc</span> 暂停 &nbsp;
+  <span class="key">F</span> 拾取/放下方块
+</div>
+
+<div id="loading">离线版 · 关卡数据由 levels.json 提供（建议用 python -m http.server 运行）</div>
+
+<div id="start-screen">
+  <h1>PORTAL</h1>
+  <p>传送门 · 离线小型 Demo</p>
+  <div class="controls">
+    <span class="label">移动</span><span><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></span>
+    <span class="label">视角</span><span>鼠标移动</span>
+    <span class="label">跳跃</span><span><kbd>空格</kbd></span>
+    <span class="label">加速</span><span><kbd>Shift</kbd></span>
+    <span class="label">蓝色门</span><span>鼠标左键（射向墙/地/台面）</span>
+    <span class="label">橙色门</span><span>鼠标右键（射向墙/地/台面）</span>
+    <span class="label">退出鼠标锁定</span><span><kbd>Esc</kbd></span>
+    <span class="label">暂停菜单</span><span><kbd>E</kbd> / <kbd>Esc</kbd></span>
+    <span class="label">拾取/放下方块</span><span><kbd>F</kbd></span>
+  </div>
+  <button id="start-btn">点击开始游戏</button>
+  <button id="ls-open-start" class="start-sub-btn">选择关卡</button>
+  <div id="err-box">
+    <p><b>⚠️ 未找到本地 Three.js</b></p>
+    <p>本项目已改为完全离线运行，Three.js 需放在 <code>libs/three.min.js</code>。</p>
+    <p>请双击项目根目录的 <code>下载依赖.bat</code> 获取（仅需联网一次），然后重新打开本页面。</p>
+  </div>
+</div>
+
+<div id="win-box">
+  <h2 id="win-title">关卡完成！</h2>
+  <p id="win-desc">你成功用传送门登上了高台 🎉 &nbsp;（按 <b>R</b> 重玩）</p>
+</div>
+
+<!-- 暂停菜单：游戏中按 E / Esc 弹出，冻结游戏但保留当前进度，不直接回主界面 -->
+<div id="pause-menu">
+  <div class="menu-card">
+    <h2>已暂停</h2>
+    <button class="menu-btn" id="pm-resume">继续游戏</button>
+    <button class="menu-btn" id="pm-select">选择关卡</button>
+    <button class="menu-btn" id="pm-restart">重新开始本关</button>
+    <button class="menu-btn" id="pm-mainmenu">返回主界面</button>
+  </div>
+</div>
+
+<!-- 选关面板：主界面与暂停菜单均可进入 -->
+<div id="level-select">
+  <div class="menu-card">
+    <h2>选择关卡</h2>
+    <div id="level-buttons"></div>
+    <button class="menu-btn" id="ls-back">返回</button>
+  </div>
+</div>
+
+<!-- 本地依赖：经典脚本，双击 file:// 也能加载，无需联网 -->
+<script src="libs/three.min.js"></script>
+
+<script>
+// ===================== 依赖检查 =====================
+if (typeof THREE === 'undefined' || !THREE.Scene) {
+  document.getElementById('loading').textContent = '未找到 libs/three.min.js';
+  document.getElementById('err-box').style.display = 'block';
+  document.getElementById('start-btn').disabled = true;
+  throw new Error('本地 Three.js 未加载，请先运行 下载依赖.bat');
+}
+document.getElementById('loading').style.display = 'none';
+
+// ============== 常量 ==============
+const GRAVITY = -25;
+const JUMP_VELOCITY = 9;
+const WALK_SPEED = 6;
+const RUN_SPEED = 11;
+const PLAYER_HEIGHT = 1.7;
+const PLAYER_RADIUS = 0.35;
+const TELEPORT_COOLDOWN = 0.15;
+// 交互
+const MOUSE_SENSITIVITY = 0.0022;
+const GRAB_RANGE = 3.5;         // 方块拾取最大距离（m）
+const GRAB_DOT = 0.5;           // 拾取时玩家视线与方块方向的最小点积（防隔墙/背后抓取）
+const PORTAL_TRIGGER_DIST = 0.5; // 传送触发：实体中心到门面距离
+const PORTAL_TRIGGER_RADIUS = 0.8; // 传送触发：到门轴切向距离（× PORTAL_SIZE）
+const CUBE_PUSH_EPS = 0.05;      // 方块推挤：玩家脚底与方块顶部的容差
+
+// ============== 场景 ==============
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x3b4258);
+scene.fog = new THREE.Fog(0x3b4258, 40, 110);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, PLAYER_HEIGHT, 3);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ============== 光照（已调亮） ==============
+scene.add(new THREE.AmbientLight(0x7a88b8, 1.25));
+scene.add(new THREE.HemisphereLight(0xc8d4ff, 0x6a5a4a, 0.95));
+
+const sun = new THREE.DirectionalLight(0xfff3e0, 0.75);
+sun.position.set(6, 12, 8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(512, 512);
+sun.shadow.camera.left = -15; sun.shadow.camera.right = 15;
+sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
+scene.add(sun);
+
+const ceilLight1 = new THREE.PointLight(0xfff0dd, 1.9, 22);
+ceilLight1.position.set(0, 5.5, 0);
+// 点光源立方体阴影在每帧 3 遍渲染（主相机 + 2 个传送门透视）下开销极大，关闭以保流畅；
+// 仅保留方向光(太阳)的 1 张阴影图，视觉足够且性能可控。
+ceilLight1.castShadow = false;
+scene.add(ceilLight1);
+// 性能优化：移除 ceilLight2/3（fragment shader 中每盏 PointLight 都参与逐像素光照计算）。
+// 用 ambient + hemi 的小幅提升补偿，视觉差异极小，shader 灯光数 3 → 1。
+
+// ============== 关卡数据（运行时从 levels.json 加载；file:// 直接打开会回退到内置默认关卡） ==============
+let ROOM_W = 16, ROOM_D = 20, ROOM_H = 6;   // 由关卡数据覆盖
+let portalSurfaces = [];   // 可放置传送门的表面：墙、地面、天花板、平台（用于射线检测）
+let platforms = [];
+let goal = null, goalLight = null, goalBaseY = 0;
+let interactCube = null;
+let cubeCarried = false;             // 伴侣方块是否正被玩家携带
+let cubeVel = new THREE.Vector3();   // 方块自由状态下的速度（重力/抛投/传送用）
+let cubeStartPos = new THREE.Vector3(); // 方块出生点（掉出世界时复位）
+let cubeTeleportCd = 0;              // 方块传送冷却，避免在门内反复跳变
+const CUBE_HALF = 0.35;              // 方块半边长（碰撞用）
+let levelGroup = null;        // 当前关卡所有 mesh 的容器，切换时整体移除
+let levels = [];              // 从 levels.json 加载的关卡数组
+let currentLevelIndex = 0;    // 当前关卡序号
+// 每关缓存的房间边界（buildLevel 时计算，避免每帧重复运算）
+let _boundsP = { hw: 0, hd: 0 }, _boundsC = { hw: 0, hd: 0 };
+
+const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xb4b4c6, roughness: 0.8, metalness: 0.05 });
+const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x76707f, roughness: 0.85, metalness: 0.0 });
+const ceilMaterial = new THREE.MeshStandardMaterial({ color: 0x565064, roughness: 0.9, metalness: 0.0 });
+const boxMaterial = new THREE.MeshStandardMaterial({ color: 0xb08050, roughness: 0.7 });
+// 跨关卡共享材质集合：clearLevel 时禁止 dispose，否则每切一关都触发一次 shader 重编译
+const SHARED_MATERIALS = new Set([wallMaterial, floorMaterial, ceilMaterial, boxMaterial]);
+
+// ============== 纹理系统（本地素材 assets/textures + 程序化兜底，无任何外部链接） ==============
+const texLoader = new THREE.TextureLoader();
+const RPT = THREE.RepeatWrapping;
+function makeCanvas(w, h, draw) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h); return c;
+}
+function procFloorTex() {
+  const c = makeCanvas(256, 256, (g, w, h) => {
+    g.fillStyle = '#6b5640'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2400; i++) {
+      g.fillStyle = 'rgba(' + (90 + (Math.random()*60|0)) + ',' + (70 + (Math.random()*40|0)) + ',' + (50 + (Math.random()*30|0)) + ',0.22)';
+      g.fillRect(Math.random()*w, Math.random()*h, 2, 2);
+    }
+  });
+  return new THREE.CanvasTexture(c);
+}
+function procWallTex() {
+  const c = makeCanvas(256, 256, (g, w, h) => {
+    g.fillStyle = '#9a8f86'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#7d7268';
+    for (let y = 0; y < h; y += 32) for (let x = ((y/32)%2)*16; x < w; x += 32) g.fillRect(x+2, y+2, 28, 28);
+  });
+  return new THREE.CanvasTexture(c);
+}
+function procBoxTex() {
+  const c = makeCanvas(128, 128, (g, w, h) => {
+    g.fillStyle = '#b5803f'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#5e3d18'; g.lineWidth = 8; g.strokeRect(5, 5, w-10, h-10);
+  });
+  return new THREE.CanvasTexture(c);
+}
+function procSwirlTex() {
+  const c = makeCanvas(256, 256, (g, w, h) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) {
+      const a = Math.random()*Math.PI*2, r = Math.random()*120;
+      const x = 128 + Math.cos(a)*r, y = 128 + Math.sin(a)*r;
+      const grd = g.createRadialGradient(x, y, 0, x, y, 42);
+      grd.addColorStop(0, 'rgba(255,255,255,0.5)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd; g.beginPath(); g.arc(x, y, 42, 0, 7); g.fill();
+    }
+  });
+  return new THREE.CanvasTexture(c);
+}
+function setColorSpace(t) { if (t.colorSpace !== undefined) t.colorSpace = THREE.SRGBColorSpace; return t; }
+
+// 先同步铺上程序化纹理（保证不空白），再异步尝试用本地 jpg 升级，失败则保留程序化
+floorMaterial.map = setColorSpace(procFloorTex()); floorMaterial.map.repeat.set(4, 5);
+wallMaterial.map = setColorSpace(procWallTex()); wallMaterial.map.repeat.set(3, 2);
+boxMaterial.map = setColorSpace(procBoxTex());
+floorMaterial.roughness = 0.7; wallMaterial.roughness = 0.9; boxMaterial.roughness = 0.8;
+
+function upgradeTex(material, file, repeat, bumpFile) {
+  texLoader.load('assets/textures/' + file, tex => {
+    tex.wrapS = tex.wrapT = RPT; setColorSpace(tex);
+    if (repeat) tex.repeat.set(repeat[0], repeat[1]);
+    if (material.map && material.map.isTexture) material.map.dispose();  // 释放程序化兜底纹理，避免显存泄漏累积
+    material.map = tex; material.needsUpdate = true;
+    if (bumpFile) texLoader.load('assets/textures/' + bumpFile, bt => {
+      bt.wrapS = bt.wrapT = RPT; if (repeat) bt.repeat.set(repeat[0], repeat[1]);
+      material.bumpMap = bt; material.bumpScale = 0.4; material.needsUpdate = true;
+    });
+  }, undefined, () => {});
+}
+upgradeTex(floorMaterial, 'hardwood2_diffuse.jpg', [4, 5]);
+upgradeTex(wallMaterial, 'brick_diffuse.jpg', [3, 2], 'brick_bump.jpg');
+upgradeTex(boxMaterial, 'crate.gif', [1, 1]);
+
+// 传送门涡流纹理（程序化 + 尝试升级 disturb.jpg）
+const portalTex = setColorSpace(procSwirlTex());
+portalTex.wrapS = portalTex.wrapT = RPT; portalTex.center.set(0.5, 0.5);
+texLoader.load('assets/textures/disturb.jpg', t => {
+  portalTex.image = t.image; setColorSpace(portalTex); portalTex.needsUpdate = true;
+}, undefined, () => {});
+
+// 渐变天空盒（程序化，无外部依赖）
+(function () {
+  const c = makeCanvas(16, 256, (g, w, h) => {
+    const grd = g.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, '#2a3350'); grd.addColorStop(0.5, '#3b4258'); grd.addColorStop(1, '#161a28');
+    g.fillStyle = grd; g.fillRect(0, 0, w, h);
+  });
+  scene.background = new THREE.CanvasTexture(c);
+})();
+
+// 漂浮尘埃粒子（氛围感）
+const DUST = 600;
+const dustGeo = new THREE.BufferGeometry();
+const dpos = new Float32Array(DUST * 3);
+const dspd = new Float32Array(DUST);
+for (let i = 0; i < DUST; i++) {
+  dpos[i*3]   = (Math.random()-0.5) * 15;
+  dpos[i*3+1] = Math.random() * 6;
+  dpos[i*3+2] = (Math.random()-0.5) * 19;
+  dspd[i] = 0.2 + Math.random()*0.5;
+}
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+  color: 0xbfd4ff, size: 0.06, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending
+}));
+scene.add(dust);
+
+function createWall(width, height, x, y, z, rotY = 0) {
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), wallMaterial);
+  mesh.position.set(x, y, z);
+  mesh.rotation.y = rotY;
+  mesh.receiveShadow = true;
+  // 性能优化：墙不再投影。墙与墙之间互投影子几乎不可见，但每帧 shadow pass 都会渲染它们；
+  // 只保留方块/平台投影，shadow pass 顶点数大幅下降。
+  mesh.castShadow = false;
+  levelGroup.add(mesh);
+  portalSurfaces.push(mesh);
+  return mesh;
+}
+
+// 根据关卡配置构建场景：地图、平台、解谜目标、可互动物体、出生点
+function buildLevel(level) {
+  ROOM_W = level.room.w; ROOM_D = level.room.d; ROOM_H = level.room.h;
+  // 缓存每关边界，避免 updatePlayer/updateCube 每帧重算
+  _boundsP.hw = ROOM_W / 2 - PLAYER_RADIUS; _boundsP.hd = ROOM_D / 2 - PLAYER_RADIUS;
+  _boundsC.hw = ROOM_W / 2 - CUBE_HALF;     _boundsC.hd = ROOM_D / 2 - CUBE_HALF;
+
+  portalSurfaces = [];   // 先重置，再依次推入 地面/天花板/墙/平台，保证所有可放置表面都在
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_D), floorMaterial);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  levelGroup.add(floor);
+  portalSurfaces.push(floor);
+
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_D), ceilMaterial);
+  ceil.rotation.x = Math.PI / 2;
+  ceil.position.y = ROOM_H;
+  ceil.receiveShadow = true;
+  levelGroup.add(ceil);
+  portalSurfaces.push(ceil);
+
+  createWall(ROOM_W, ROOM_H, 0, ROOM_H/2, -ROOM_D/2, 0);
+  createWall(ROOM_W, ROOM_H, 0, ROOM_H/2, ROOM_D/2, Math.PI);
+  createWall(ROOM_D, ROOM_H, -ROOM_W/2, ROOM_H/2, 0, Math.PI/2);
+  createWall(ROOM_D, ROOM_H, ROOM_W/2, ROOM_H/2, 0, -Math.PI/2);
+
+  // 平台：第一个是地面，其余来自关卡数据（箱子 / 解谜高台等）
+  platforms = [{
+    minX: -ROOM_W/2, maxX: ROOM_W/2, minY: 0, maxY: 0, minZ: -ROOM_D/2, maxZ: ROOM_D/2, isFloor: true
+  }];
+  level.platforms.forEach(p => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, p.d), boxMaterial);
+    mesh.position.set(p.x, p.y, p.z);
+    mesh.castShadow = false; mesh.receiveShadow = true;
+    levelGroup.add(mesh);
+    portalSurfaces.push(mesh);
+    platforms.push({
+      minX: p.x - p.w/2, maxX: p.x + p.w/2,
+      minY: p.y - p.h/2, maxY: p.y + p.h/2,
+      minZ: p.z - p.d/2, maxZ: p.z + p.d/2, isFloor: false
+    });
+  });
+
+  // 解谜目标（发光圆环，登顶触碰即过关）
+  goal = new THREE.Mesh(
+    new THREE.TorusGeometry(0.45, 0.13, 18, 36),
+    new THREE.MeshStandardMaterial({ color: 0x7dffd0, emissive: 0x33ffaa, emissiveIntensity: 1.4, roughness: 0.25 })
+  );
+  goalBaseY = level.goal.y;
+  goal.position.set(level.goal.x, goalBaseY, level.goal.z);
+  goal.rotation.x = Math.PI / 2;
+  levelGroup.add(goal);
+  goalLight = new THREE.PointLight(0x66ffcc, 1.3, 9);
+  goalLight.position.copy(goal.position);
+  levelGroup.add(goalLight);
+
+  // 可互动立方体
+  interactCube = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.7, 0.7),
+    new THREE.MeshStandardMaterial({ color: 0x55cc88, roughness: 0.4, metalness: 0.3 })
+  );
+  interactCube.position.set(level.interactCube.x, level.interactCube.y, level.interactCube.z);
+  interactCube.castShadow = true; interactCube.receiveShadow = true;
+  // 给方块加可发光的自发光通道：被瞄准可拾取时高亮提示
+  interactCube.material.emissive = new THREE.Color(0x2a6a4a);
+  interactCube.material.emissiveIntensity = 0;
+  cubeStartPos.copy(interactCube.position);   // 记出生点，方块掉出世界时回到这里
+  cubeCarried = false; cubeVel.set(0, 0, 0); cubeTeleportCd = 0;
+  levelGroup.add(interactCube);
+  // 方块作为可站立的动态平台（边界由 updateCube 每帧更新）
+  platforms.push({
+    minX: interactCube.position.x - CUBE_HALF,
+    maxX: interactCube.position.x + CUBE_HALF,
+    minY: interactCube.position.y - CUBE_HALF,
+    maxY: interactCube.position.y + CUBE_HALF,
+    minZ: interactCube.position.z - CUBE_HALF,
+    maxZ: interactCube.position.z + CUBE_HALF,
+    isFloor: false, isCube: true
+  });
+
+  // 出生点
+  player.position.set(level.start.x, level.start.y, level.start.z);
+  camera.position.copy(player.position);
+}
+
+let levelComplete = false;
+function checkGoal() {
+  if (levelComplete) return;
+  const dx = player.position.x - goal.position.x;
+  const dy = player.position.y - goal.position.y;
+  const dz = player.position.z - goal.position.z;
+  if (dx * dx + dy * dy + dz * dz < 1.6 * 1.6) {
+    levelComplete = true;
+    const isLast = currentLevelIndex >= levels.length - 1;
+    const title = document.getElementById('win-title');
+    const desc = document.getElementById('win-desc');
+    if (isLast) {
+      if (title) title.textContent = '全部通关！';
+      if (desc) desc.innerHTML = '你完成了所有关卡 🎉 &nbsp;（按 <b>R</b> 从头再玩）';
+    } else {
+      if (title) title.textContent = '关卡 ' + (currentLevelIndex + 1) + ' 完成！';
+      if (desc) desc.innerHTML = '准备进入下一关… &nbsp;（按 <b>R</b> 继续）';
+    }
+    const el = document.getElementById('win-box');
+    if (el) el.style.display = 'block';
+    playSound('goal');
+  }
+}
+
+// ============== 玩家状态 ==============
+const player = {
+  position: new THREE.Vector3(0, PLAYER_HEIGHT, 3),
+  velocity: new THREE.Vector3(0, 0, 0),
+  onGround: false,
+  teleportCooldown: 0,
+};
+const keys = {};
+let isLocked = false;
+let isPaused = false;        // 暂停菜单状态：true 时游戏冻结、显示菜单，但不回主界面
+
+// ============== 指针锁定 + 第一人称视角（核心 THREE 自实现，无外部插件） ==============
+let yaw = 0, pitch = 0;
+const PI_2 = Math.PI / 2;
+const dom = renderer.domElement;
+
+function applyLook() {
+  camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+}
+document.addEventListener('mousemove', (e) => {
+  if (!isLocked) return;
+  yaw -= e.movementX * MOUSE_SENSITIVITY;
+  pitch -= e.movementY * MOUSE_SENSITIVITY;
+  pitch = Math.max(-PI_2 + 0.05, Math.min(PI_2 - 0.05, pitch));
+  applyLook();
+});
+document.addEventListener('pointerlockchange', () => {
+  isLocked = (document.pointerLockElement === dom);
+  if (isLocked) {
+    hideOverlay('start-screen');
+    hideOverlay('level-select');
+    if (isPaused) {                 // 由暂停恢复：清标志并隐藏暂停菜单
+      isPaused = false;
+      hideOverlay('pause-menu');
+    }
+  } else {
+    // 非暂停导致的释放（如浏览器自动退出锁定）→ 回到主界面
+    if (!isPaused) showOverlay('start-screen');
+  }
+});
+document.addEventListener('pointerlockerror', () => {
+  alert('指针锁定失败，请允许后重试，或检查浏览器是否阻止了全屏/锁定。');
+});
+document.getElementById('start-btn').addEventListener('click', () => dom.requestPointerLock());
+
+// ============== 音效（纯 WebAudio 合成，零外部文件，离线可用） ==============
+// 在 AudioContext 尚未启动时静默跳过（浏览器自动播放策略要求用户交互后才允许发声）。
+let _audioCtx = null;
+function _getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+// 合成四种音效：portal(放门) / teleport(传送) / goal(过关) / grab(拾取方块)
+function playSound(type) {
+  try {
+    const ctx = _getAudioCtx();
+    const t = ctx.currentTime;
+    switch (type) {
+      case 'portal': {
+        // 高频嗖声：蓝色更亮、橙色更暖
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'sine';
+        o.frequency.setValueAtTime(900, t);
+        o.frequency.exponentialRampToValueAtTime(300, t + 0.18);
+        g.gain.setValueAtTime(0.1, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        o.start(t); o.stop(t + 0.18);
+        break;
+      }
+      case 'teleport': {
+        // 低沉嗡鸣：穿越感
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(200, t);
+        o.frequency.exponentialRampToValueAtTime(500, t + 0.22);
+        g.gain.setValueAtTime(0.08, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        o.start(t); o.stop(t + 0.22);
+        break;
+      }
+      case 'goal': {
+        // 过关：三音上行和弦
+        [523, 659, 784].forEach((f, i) => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'sine';
+          o.frequency.value = f;
+          g.gain.setValueAtTime(0.1, t + i * 0.07);
+          g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.35);
+          o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.35);
+        });
+        break;
+      }
+      case 'grab': {
+        // 短促点击
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'square';
+        o.frequency.value = 600;
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+        o.start(t); o.stop(t + 0.06);
+        break;
+      }
+    }
+  } catch (_) { /* AudioContext 未就绪时静默 */ }
+}
+
+// ============== 暂停菜单 / 选关 ==============
+let levelSelectReturn = 'start';   // 'start' = 从主界面进入选关；'pause' = 从暂停菜单进入选关
+function showOverlay(id) { document.getElementById(id).style.display = 'flex'; }
+function hideOverlay(id) { document.getElementById(id).style.display = 'none'; }
+
+function pauseGame() {
+  isPaused = true;
+  if (document.pointerLockElement) document.exitPointerLock();   // 释放鼠标以便操作菜单
+  showOverlay('pause-menu');
+}
+function resumeGame() {
+  // 重新锁定指针；pointerlockchange 会清掉 isPaused 并隐藏暂停菜单 / 选关面板
+  dom.requestPointerLock();
+}
+function returnToMainMenu() {
+  isPaused = false;
+  hideOverlay('pause-menu');
+  hideOverlay('level-select');
+  showOverlay('start-screen');    // 指针已释放，显式回到主界面
+}
+function openLevelSelect(from) {
+  levelSelectReturn = from;
+  if (from === 'start') hideOverlay('start-screen');
+  else hideOverlay('pause-menu');
+  buildLevelButtons();
+  showOverlay('level-select');
+}
+function closeLevelSelect() {
+  hideOverlay('level-select');
+  if (levelSelectReturn === 'start') showOverlay('start-screen');
+  else showOverlay('pause-menu');
+}
+function buildLevelButtons() {
+  const box = document.getElementById('level-buttons');
+  box.innerHTML = '';
+  if (!levels || !levels.length) return;
+  levels.forEach((lv, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'menu-btn';
+    btn.textContent = (i + 1) + '. ' + (lv.name || ('关卡 ' + (i + 1)));
+    btn.addEventListener('click', () => {
+      loadLevelByIndex(i);
+      hideOverlay('level-select');
+      hideOverlay('pause-menu');
+      resumeGame();    // 进入所选关卡
+    });
+    box.appendChild(btn);
+  });
+}
+
+// 暂停菜单按钮
+document.getElementById('pm-resume').addEventListener('click', resumeGame);
+document.getElementById('pm-select').addEventListener('click', () => openLevelSelect('pause'));
+document.getElementById('pm-restart').addEventListener('click', () => {
+  loadLevelByIndex(currentLevelIndex);
+  hideOverlay('pause-menu');
+  hideOverlay('level-select');
+  resumeGame();
+});
+document.getElementById('pm-mainmenu').addEventListener('click', returnToMainMenu);
+// 主界面「选择关卡」
+document.getElementById('ls-open-start').addEventListener('click', () => openLevelSelect('start'));
+// 选关面板「返回」
+document.getElementById('ls-back').addEventListener('click', closeLevelSelect);
+
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (levelComplete && e.code === 'KeyR') {
+    const isLast = currentLevelIndex >= levels.length - 1;
+    loadLevelByIndex(isLast ? 0 : currentLevelIndex + 1);
+    return;
+  }
+  if (e.code === 'KeyF' && !e.repeat && isLocked && !isPaused && !levelComplete) {
+    toggleCubeGrab();   // 拾取 / 放下 伴侣方块
+  }
+  if (e.code === 'KeyE' || e.code === 'Escape') {
+    if (levelComplete) return;                       // 通关画面下不弹暂停，用 R 继续
+    if (isLocked && !isPaused) {                     // 游戏中 → 暂停
+      e.preventDefault();
+      pauseGame();
+    } else if (isPaused && !isLocked) {              // 暂停中 → 继续
+      e.preventDefault();
+      resumeGame();
+    }
+  }
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// 鼠标放置传送门
+dom.addEventListener('mousedown', (e) => {
+  if (!isLocked) return;
+  e.preventDefault();
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const intersects = raycaster.intersectObjects(portalSurfaces, false);
+  if (intersects.length > 0) {
+    const hit = intersects[0];
+    const point = hit.point;
+    const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+    // 墙面 / 地面 / 天花板 / 平台 任意表面都可放置；placePortal 不再依赖"墙"形参
+    if (e.button === 0) placePortal('blue', point, normal);
+    else if (e.button === 2) placePortal('orange', point, normal);
+  }
+});
+dom.addEventListener('contextmenu', e => e.preventDefault());
+
+// ============== 传送门 ==============
+const portals = { blue: null, orange: null };
+const PORTAL_SIZE = 1.2;
+
+// 传送门透视角（Render-to-Texture）：从一门望进去看到另一门的实时画面。
+// 虚拟摄像机 = 显示门.matrixWorld × 180°翻转 × 源门.matrixWorld⁻¹ × 主摄像机.matrixWorld
+const RT_SIZE = 512;
+const portalCam = new THREE.PerspectiveCamera();
+portalCam.matrixAutoUpdate = false;
+const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
+function makePortalRT() {
+  const rt = new THREE.WebGLRenderTarget(RT_SIZE, RT_SIZE, rtOpts);
+  // 各向异性过滤：斜视传送门时纹理不会被拉糊，进一步缓解"靠近后画面被放大变糊"的观感
+  rt.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return rt;
+}
+let portalsActive = false;   // 两门都放置后才开启透视角
+
+function createPortalMesh(colorHex) {
+  const group = new THREE.Group();
+  const color = new THREE.Color(colorHex);
+  // 门面统一为圆形（不再 scale.y 拉伸），避免把方形 RT 纵向拉伸导致透视畸变
+  // 外发光环（叠加混合，营造能量外溢）
+  const glow = new THREE.Mesh(
+    new THREE.RingGeometry(PORTAL_SIZE * 1.0, PORTAL_SIZE * 1.4, 64),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  group.add(glow);
+  // 旋涡面（涡流纹理 + 叠加混合 + 颜色染色）
+  const swirl = new THREE.Mesh(
+    new THREE.CircleGeometry(PORTAL_SIZE * 0.95, 48),
+    new THREE.MeshBasicMaterial({ map: portalTex, color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  swirl.position.z = 0.02; group.add(swirl);
+  // 内圈亮核
+  const core = new THREE.Mesh(
+    new THREE.CircleGeometry(PORTAL_SIZE * 0.45, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  core.position.z = 0.03; group.add(core);
+  // 边界环
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(PORTAL_SIZE * 0.85, PORTAL_SIZE * 1.0, 48),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false })
+  );
+  group.add(ring);
+  // 透视画面层（默认隐藏；两门都放置后显示另一门的实时渲染贴图）
+  const view = new THREE.Mesh(
+    new THREE.CircleGeometry(PORTAL_SIZE * 0.95, 48),
+    new THREE.MeshBasicMaterial({ map: portalTex, transparent: true, opacity: 1.0, side: THREE.DoubleSide, depthWrite: false })
+  );
+  view.position.z = 0.04; view.visible = false; group.add(view);
+  const rt = makePortalRT();
+  const light = new THREE.PointLight(colorHex, 0.9, 6);
+  light.position.z = 0.6; group.add(light);
+  return { group, glow, swirl, core, ring, view, rt, light, color };
+}
+
+// 构建传送门的一致基矩阵：局部 +Z = 法线，局部 +Y = 接近世界 up（法线竖直时改用水平 up），
+// 局部 +X = Y×Z。这样地面/天花板/平台顶底门也能得到合法、稳定的朝向，
+// 修复"门面法线竖直时 lookAt(up=世界Y) 退化成 NaN/乱朝向，导致透视与传送后方位错乱"的问题。
+function makePortalBasis(pos, normal) {
+  const z = normal.clone().normalize();
+  let y = new THREE.Vector3(0, 1, 0);
+  if (Math.abs(z.y) > 0.99) y.set(0, 0, 1);                 // 法线接近竖直 → 用水平 up 避免退化
+  y.sub(z.clone().multiplyScalar(y.dot(z))).normalize();    // 令 y ⟂ z
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  const m = new THREE.Matrix4().makeBasis(x, y, z);
+  m.setPosition(pos);
+  return m;
+}
+
+function placePortal(type, point, normal) {
+  if (portals[type]) { scene.remove(portals[type].group); if (portals[type].rt) portals[type].rt.dispose(); }
+  const meshes = createPortalMesh(type === 'blue' ? 0x4db8ff : 0xff8c42);
+  const group = meshes.group;
+  const portalPos = point.clone().add(normal.clone().multiplyScalar(0.02));
+  const m = makePortalBasis(portalPos, normal);
+  group.position.copy(portalPos);
+  group.quaternion.setFromRotationMatrix(m);
+  scene.add(group);
+  portals[type] = { ...meshes, position: portalPos.clone(), normal: normal.clone(), group, quaternion: group.quaternion.clone() };
+  playSound('portal');
+}
+
+// 传送旋转：出口门旋转 × 180°翻转 × 入口门旋转⁻¹
+// 关键：必须包含"绕竖直轴 180° 翻转"，否则"进入一面墙"只会变成"朝向另一面墙里"，
+// 而不是从另一面门里朝外走出来（这正是之前视角朝向错误、且动量方向反了的根因）。
+const _flipAxis = new THREE.Vector3(0, 1, 0);
+function teleport(entityPos, entityVel, fromPortal, toPortal) {
+  const flipQuat = new THREE.Quaternion().setFromAxisAngle(_flipAxis, Math.PI);
+  const R = toPortal.quaternion.clone()           // 出口门本地->世界
+    .multiply(flipQuat)                            // 180° 翻转（进->出）
+    .multiply(fromPortal.quaternion.clone().invert()); // 世界->入口门本地
+
+  // 位置：保留进门时的横向偏移（左右/上下），并在出口门前留一段站立距离，避免嵌进墙里
+  const relLocal = entityPos.clone().sub(fromPortal.position)
+    .applyQuaternion(fromPortal.quaternion.clone().invert());
+  const newRelTangential = new THREE.Vector3(relLocal.x, relLocal.y, 0)
+    .applyQuaternion(toPortal.quaternion);
+  const position = toPortal.position.clone()
+    .add(newRelTangential)
+    .add(toPortal.normal.clone().multiplyScalar(0.6));
+
+  // 速度：方向随旋转变换（含翻转），动量大小守恒
+  const velocity = entityVel.clone().applyQuaternion(R);
+
+  // 视角：把当前朝向按同一旋转变换，再分解回 yaw / pitch（第一人称相机用 YXZ 欧拉角）
+  const fwd = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+  fwd.applyQuaternion(R);
+  const newYaw = Math.atan2(-fwd.x, -fwd.z);
+  const newPitch = Math.asin(Math.max(-1, Math.min(1, fwd.y)));
+
+  return { position, velocity, yaw: newYaw, pitch: newPitch };
+}
+
+function checkPortalTeleport() {
+  if (!portals.blue || !portals.orange) return;
+  if (player.teleportCooldown > 0) return;
+  _tpPos.copy(player.position);
+  _tpPos.y -= PLAYER_HEIGHT;
+  for (const [fromKey, toKey] of [['blue', 'orange'], ['orange', 'blue']]) {
+    const from = portals[fromKey], to = portals[toKey];
+    _tpLocal.copy(_tpPos).sub(from.position).applyQuaternion(from.quaternion.clone().invert());
+    if (Math.abs(_tpLocal.z) < PORTAL_TRIGGER_DIST) {
+      const distSq = (_tpLocal.x * _tpLocal.x) + (_tpLocal.y * _tpLocal.y);
+      if (distSq < PORTAL_SIZE * PORTAL_SIZE * PORTAL_TRIGGER_RADIUS) {
+        const speed = player.velocity.length();
+        if (speed < 0.5 && Math.abs(_tpLocal.z) > 0.3) continue;
+        const result = teleport(_tpPos, player.velocity, from, to);
+        player.position.copy(result.position); player.position.y += PLAYER_HEIGHT;
+        player.velocity.copy(result.velocity);
+        yaw = result.yaw; pitch = result.pitch; applyLook();
+        camera.position.copy(player.position);
+        player.teleportCooldown = TELEPORT_COOLDOWN;
+        player.onGround = false;
+        playSound('teleport');
+        return;
+      }
+    }
+  }
+}
+
+// ============== 物理 ==============
+// 共享 AABB 平台碰撞解算：实体从所有平台中推回，返回是否落地（isFloor 或平台顶）
+// newPos: 实体的"下一帧位置"（会被修改）；vel: 实体速度（碰撞时清零竖直分量）；
+// halfSize: 水平碰撞半径；prevPosY: 实体上一帧的 y（用于判定是否从上方落下）；
+// feetOffset: 实体中心到脚底的垂直偏移（玩家=PLAYER_HEIGHT，方块=CUBE_HALF）
+function resolveAABBCollision(newPos, vel, halfSize, prevPosY, feetOffset) {
+  let onGround = false;
+  const feetY = newPos.y - feetOffset;
+  platforms.forEach(plat => {
+    if (plat.isCube) return;
+    if (plat.isFloor) {
+      if (feetY < 0 && prevPosY - feetOffset >= -0.1) {
+        newPos.y = feetOffset; vel.y = 0; onGround = true;
+      }
+      return;
+    }
+    const px = newPos.x, pz = newPos.z;
+    if (px + halfSize > plat.minX && px - halfSize < plat.maxX &&
+        pz + halfSize > plat.minZ && pz - halfSize < plat.maxZ) {
+      if (feetY < plat.maxY && newPos.y > plat.minY) {
+        if (prevPosY - feetOffset >= plat.maxY - 0.1 && vel.y <= 0) {
+          newPos.y = plat.maxY + feetOffset; vel.y = 0; onGround = true;
+        } else if (newPos.y <= plat.minY && vel.y > 0) {
+          vel.y = 0;
+        }
+      }
+    }
+    if (newPos.y - feetOffset < plat.maxY && newPos.y + feetOffset > plat.minY) {
+      if (px + halfSize > plat.minX && px - halfSize < plat.maxX &&
+          pz + halfSize > plat.minZ && pz - halfSize < plat.maxZ) {
+        const oL = (px + halfSize) - plat.minX, oR = plat.maxX - (px - halfSize);
+        const oF = (pz + halfSize) - plat.minZ, oB = plat.maxZ - (pz - halfSize);
+        const m = Math.min(oL, oR, oF, oB);
+        if (m === oL) newPos.x = plat.minX - halfSize;
+        else if (m === oR) newPos.x = plat.maxX + halfSize;
+        else if (m === oF) newPos.z = plat.minZ - halfSize;
+        else newPos.z = plat.maxZ + halfSize;
+      }
+    }
+  });
+  return onGround;
+}
+
+// 预分配临时向量（避免每帧 new 造成 GC 压力）
+const _fwd = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _moveDir = new THREE.Vector3();
+const _cubeFwd = new THREE.Vector3();
+const _cubeTarget = new THREE.Vector3();
+const _tpPos = new THREE.Vector3();
+const _tpLocal = new THREE.Vector3();
+const _cubeToC = new THREE.Vector3();
+
+function updatePlayer(dt) {
+  if (!isLocked) return;
+  camera.getWorldDirection(_fwd);
+  _fwd.y = 0; _fwd.normalize();
+  _right.crossVectors(_fwd, _cubeToC.set(0, 1, 0)).normalize();
+  _moveDir.set(0, 0, 0);
+  if (keys['KeyW']) _moveDir.add(_fwd);
+  if (keys['KeyS']) _moveDir.sub(_fwd);
+  if (keys['KeyD']) _moveDir.add(_right);
+  if (keys['KeyA']) _moveDir.sub(_right);
+  const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? RUN_SPEED : WALK_SPEED;
+  if (_moveDir.lengthSq() > 0) _moveDir.normalize().multiplyScalar(speed);
+  player.velocity.x = _moveDir.x;
+  player.velocity.z = _moveDir.z;
+  if (keys['Space'] && player.onGround) { player.velocity.y = JUMP_VELOCITY; player.onGround = false; }
+  if (!player.onGround) player.velocity.y += GRAVITY * dt;
+
+  const newPos = player.position.clone().add(player.velocity.clone().multiplyScalar(dt));
+  player.onGround = false;
+  player.onGround = resolveAABBCollision(newPos, player.velocity, PLAYER_RADIUS, player.position.y, PLAYER_HEIGHT);
+
+  const hw = _boundsP.hw, hd = _boundsP.hd;
+  newPos.x = Math.max(-hw, Math.min(hw, newPos.x));
+  newPos.z = Math.max(-hd, Math.min(hd, newPos.z));
+  if (newPos.y > ROOM_H - 0.2) { newPos.y = ROOM_H - 0.2; player.velocity.y = 0; }
+
+  // 伴侣方块水平推挤（可搬动箱子风格）：玩家顶着方块走，方块不反推玩家；携带中不推
+  if (interactCube && !cubeCarried) {
+    const dx = newPos.x - interactCube.position.x;
+    const dz = newPos.z - interactCube.position.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const minDist = PLAYER_RADIUS + CUBE_HALF;
+    if (dist < minDist && dist > 0.001) {
+      const feetY = newPos.y - PLAYER_HEIGHT;
+      const cubeTop = interactCube.position.y + CUBE_HALF;
+      // 仅当玩家脚底在方块顶部以下时推方块（站在方块上时不应推）
+      if (feetY < cubeTop - CUBE_PUSH_EPS) {
+        const overlap = minDist - dist;
+        const nX = dx / dist, nZ = dz / dist;
+        const newCX = interactCube.position.x - nX * overlap;
+        const newCZ = interactCube.position.z - nZ * overlap;
+        interactCube.position.x = Math.max(-_boundsC.hw, Math.min(_boundsC.hw, newCX));
+        interactCube.position.z = Math.max(-_boundsC.hd, Math.min(_boundsC.hd, newCZ));
+        // 方块不放冲量，只移位置（无动量、不滑行）；玩家也不被反推
+      }
+    }
+  }
+
+  player.position.copy(newPos);
+  camera.position.copy(player.position);
+  if (player.teleportCooldown > 0) player.teleportCooldown -= dt;
+  checkPortalTeleport();
+}
+
+// ============== 伴侣方块（Companion Cube）模块 ==============
+// 把原本只自转的装饰绿块升级为可玩道具：[F] 拾取/放下、脱手时向前抛出，
+// 自由状态受重力与平台碰撞约束，并能像玩家一样穿越传送门（复用 teleport()）。
+// 设计要点：
+//  - 携带时关闭物理，方块平滑跟随相机前方"手持位"，避免穿墙抖动；
+//  - 放下时继承玩家水平速度并叠加向前冲量，方便把方块"丢进"传送门送到远处；
+//  - 方块无朝向，teleport() 返回的 yaw/pitch 直接忽略，只用 position/velocity；
+//  - 掉出房间（y<-3）自动回到出生点，防止道具丢失卡死。
+let _cubeHintCache = '';
+function setCubeHint(t) {
+  if (t === _cubeHintCache) return;            // 避免每帧重写同一文本
+  _cubeHintCache = t;
+  const el = document.getElementById('cube-hint');
+  if (el) el.textContent = t;
+}
+
+function toggleCubeGrab() {
+  if (cubeCarried) dropCube();
+  else tryGrabCube();
+}
+
+// 拾取：需在 GRAB_RANGE 内且大致正对方块（GRAB_DOT 防隔墙/背后抓取）
+function tryGrabCube() {
+  if (!interactCube) return;
+  _cubeToC.copy(interactCube.position).sub(camera.position);
+  const dist = _cubeToC.length();
+  if (dist > GRAB_RANGE) return;
+  camera.getWorldDirection(_cubeFwd);
+  if (_cubeFwd.dot(_cubeToC.normalize()) < GRAB_DOT) return;
+  cubeCarried = true;
+  cubeVel.set(0, 0, 0);
+  playSound('grab');
+}
+
+// 放下：继承玩家速度 + 向前抛投，使方块能被"扔"进传送门
+function dropCube() {
+  cubeCarried = false;
+  camera.getWorldDirection(_cubeFwd);
+  cubeVel.copy(player.velocity);
+  cubeVel.add(_cubeFwd.multiplyScalar(4));
+  cubeVel.y += 1.5;
+  playSound('grab');
+}
+
+// 方块专属传送检测（与玩家 checkPortalTeleport 同构，但无视角量）
+function tryCubeTeleport() {
+  if (!portals.blue || !portals.orange) return;
+  if (cubeTeleportCd > 0) return;
+  _tpPos.copy(interactCube.position);
+  for (const [fk, tk] of [['blue', 'orange'], ['orange', 'blue']]) {
+    const from = portals[fk], to = portals[tk];
+    _tpLocal.copy(_tpPos).sub(from.position).applyQuaternion(from.quaternion.clone().invert());
+    if (Math.abs(_tpLocal.z) < PORTAL_TRIGGER_DIST) {
+      const distSq = _tpLocal.x * _tpLocal.x + _tpLocal.y * _tpLocal.y;
+      if (distSq < PORTAL_SIZE * PORTAL_SIZE * 0.7) {
+        const r = teleport(_tpPos, cubeVel, from, to);
+        interactCube.position.copy(r.position);
+        cubeVel.copy(r.velocity);
+        cubeTeleportCd = TELEPORT_COOLDOWN;
+        playSound('teleport');
+        return;
+      }
+    }
+  }
+}
+
+function updateCube(dt) {
+  if (!interactCube) return;
+  if (!isLocked || isPaused) return;            // 未锁定/暂停 → 冻结（与玩家一致）
+  if (cubeCarried) {
+    // 手持位：相机前方 1.6m、略低于视线；lerp 平滑跟随
+    camera.getWorldDirection(_cubeFwd);
+    _cubeTarget.copy(camera.position).add(_cubeFwd.multiplyScalar(1.6));
+    _cubeTarget.y -= 0.15;
+    interactCube.position.lerp(_cubeTarget, Math.min(1, dt * 12));
+    interactCube.rotation.y += dt * 1.2;
+    if (interactCube.material.emissiveIntensity !== 0) interactCube.material.emissiveIntensity = 0;
+    setCubeHint('携带方块中 · 按 F 放下（向前抛出）');
+    return;
+  }
+  // ---- 自由物理 ----
+  if (cubeTeleportCd > 0) cubeTeleportCd -= dt;
+  cubeVel.y += GRAVITY * dt;
+  // cubeVel.x/z 在空闲时保持 0（方块无水平动量，由 player push 直接移位置）；
+  // teleport() 传来的水平冲量在冷却期内物理仍会处理，但下一帧即归零，实现"无滑行"效果
+  cubeVel.x = 0; cubeVel.z = 0;
+  const newPos = interactCube.position.clone().add(cubeVel.clone().multiplyScalar(dt));
+
+  resolveAABBCollision(newPos, cubeVel, CUBE_HALF, interactCube.position.y, CUBE_HALF);
+
+  // 房间边界
+  newPos.x = Math.max(-_boundsC.hw, Math.min(_boundsC.hw, newPos.x));
+  newPos.z = Math.max(-_boundsC.hd, Math.min(_boundsC.hd, newPos.z));
+  if (newPos.y > ROOM_H - CUBE_HALF) { newPos.y = ROOM_H - CUBE_HALF; cubeVel.y = 0; }
+  // 掉出世界 → 回到出生点（防止方块永久丢失）
+  if (newPos.y < -3) { newPos.copy(cubeStartPos); cubeVel.set(0, 0, 0); }
+
+  interactCube.position.copy(newPos);
+  tryCubeTeleport();
+
+  // 更新方块在 platforms 中的动态平台边界（使玩家能站在方块上）
+  const cubePlat = platforms.find(p => p.isCube);
+  if (cubePlat) {
+    cubePlat.minX = interactCube.position.x - CUBE_HALF;
+    cubePlat.maxX = interactCube.position.x + CUBE_HALF;
+    cubePlat.minY = interactCube.position.y - CUBE_HALF;
+    cubePlat.maxY = interactCube.position.y + CUBE_HALF;
+    cubePlat.minZ = interactCube.position.z - CUBE_HALF;
+    cubePlat.maxZ = interactCube.position.z + CUBE_HALF;
+  }
+
+  // 可拾取高亮 + 提示文本（在范围内且正对方块时）
+  _cubeToC.copy(interactCube.position).sub(camera.position);
+  const d = _cubeToC.length();
+  camera.getWorldDirection(_cubeFwd);
+  const grabbable = d < GRAB_RANGE && _cubeFwd.dot(_cubeToC.normalize()) > GRAB_DOT;
+  interactCube.material.emissiveIntensity = grabbable ? (0.5 + Math.sin(performance.now() * 0.006) * 0.25) : 0;
+  setCubeHint(grabbable ? '按 F 拾取方块' : '');
+  interactCube.rotation.y += dt * 0.6;
+}
+
+// 传送门透视角渲染：每帧为每扇门用虚拟摄像机渲染另一侧画面到 RT，并贴回门面
+function renderPortalView(display, source) {
+  display.group.updateMatrixWorld(true);
+  source.group.updateMatrixWorld(true);
+// 传送门透视角矩阵（修正版）
+// 原公式 display × flip(Y,π) × source⁻¹ × camera 会在两门位于"相对侧"（前后墙）时，
+// 把虚拟相机甩到显示门的"错误侧"（房间外、蓝门后面 15m 处），导致透视内容位置/方向全错。
+// 正确公式：source × display⁻¹ × camera —— 虚拟相机永远位于"对面门（source）"的房间侧、
+// 面向房间。同侧和对侧都能正确显示。
+const m = new THREE.Matrix4()
+  .copy(source.group.matrixWorld)
+  .multiply(display.group.matrixWorld.clone().invert())
+  .multiply(camera.matrixWorld);
+  portalCam.matrixWorld.copy(m);
+  portalCam.matrixWorldInverse.copy(m).invert();
+  // 传送门 RT 与门面均为正方形/圆形，故虚拟相机用正方形投影（aspect=1）。
+  // 直接改 elements[0]=elements[5] 的 hack 在 Three.js 内部状态上不严谨；
+  // 改为设 fov/aspect/near/far 后调 updateProjectionMatrix()，与相机模型自洽。
+  portalCam.fov = camera.fov;
+  portalCam.aspect = 1;
+  portalCam.near = camera.near;
+  portalCam.far = camera.far;
+  portalCam.updateProjectionMatrix();
+  renderer.setRenderTarget(display.rt);
+  renderer.render(scene, portalCam);
+  renderer.setRenderTarget(null);
+  display.view.material.map = display.rt.texture;
+  display.view.visible = true;
+}
+// 视锥裁剪：只有当"显示门"位于主相机画面内时，才渲染它的透视 RT。
+// 望向别处时直接跳过，把每帧渲染从固定 3 遍降到"主画面 + 当前可见的门"遍数。
+const _frustum = new THREE.Frustum();
+const _projScreen = new THREE.Matrix4();
+const _portalSphere = new THREE.Sphere();
+const _portalCenter = new THREE.Vector3();
+function portalOnScreen(p) {
+  p.group.getWorldPosition(_portalCenter);
+  _portalSphere.set(_portalCenter, PORTAL_SIZE * 1.6);   // 1.2 太紧，边缘门会被误判裁掉看不到 RT；1.6 留足余量
+  return _frustum.intersectsSphere(_portalSphere);
+}
+function updatePortalViews() {
+  portalsActive = !!(portals.blue && portals.orange);
+  if (!portalsActive) {
+    ['blue', 'orange'].forEach(t => { if (portals[t]) portals[t].view.visible = false; });
+    return;
+  }
+  camera.updateMatrixWorld();
+  camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  _projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  _frustum.setFromProjectionMatrix(_projScreen);
+  ['blue', 'orange'].forEach(t => {
+    const display = portals[t];
+    if (!display) return;
+    // 显示门不在画面内则跳过它的 RT 渲染（也隐藏其透视画面，只留旋涡兜底）
+    if (!portalOnScreen(display)) { display.view.visible = false; return; }
+    const source = (t === 'blue') ? portals.orange : portals.blue;
+    // 渲染透视前隐藏两扇门自身，避免门面被拍进对方画面
+    portals.blue.group.visible = false; portals.orange.group.visible = false;
+    renderPortalView(display, source);
+    portals.blue.group.visible = true; portals.orange.group.visible = true;
+  });
+}
+
+function animatePortals(time) {
+  ['blue', 'orange'].forEach(type => {
+    const p = portals[type];
+    if (!p) return;
+    p.ring.material.opacity = 0.7 + Math.sin(time * 3) * 0.2;
+    p.glow.material.opacity = 0.25 + Math.sin(time * 2.5) * 0.12;
+    p.core.material.opacity = 0.25 + Math.sin(time * 4) * 0.12;
+    p.swirl.material.opacity = (portalsActive ? 0.3 : 0.9) + Math.sin(time * 4) * 0.08;
+    p.light.intensity = 0.7 + Math.sin(time * 2) * 0.25;
+  });
+}
+
+function animateEnv(dt, time) {
+  const arr = dustGeo.attributes.position.array;
+  for (let i = 0; i < DUST; i++) {
+    arr[i*3+1] += dspd[i] * dt * 0.3;
+    if (arr[i*3+1] > ROOM_H) arr[i*3+1] = 0;
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+  portalTex.rotation = time * 0.4;
+  portalTex.offset.set(Math.sin(time * 0.2) * 0.05, Math.cos(time * 0.15) * 0.05);
+}
+
+// ============== 帧率显示 ==============
+// 每 500ms 统计一次 frames 数，换算成 FPS 写到 #fps。滑动窗口简单稳定，避免每帧重写 DOM。
+let _fpsFrames = 0;
+let _fpsLastUpdate = performance.now();
+const _fpsEl = document.getElementById('fps');
+let _fpsText = '';
+function updateFPS() {
+  _fpsFrames++;
+  const now = performance.now();
+  const elapsed = now - _fpsLastUpdate;
+  if (elapsed >= 500) {
+    const fps = (_fpsFrames * 1000 / elapsed);
+    const text = fps.toFixed(0) + ' FPS';
+    if (text !== _fpsText) { _fpsText = text; if (_fpsEl) _fpsEl.textContent = text; }
+    _fpsFrames = 0;
+    _fpsLastUpdate = now;
+  }
+}
+
+let prevTime = performance.now();
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime = now;
+  const time = now / 1000;
+  updatePlayer(dt);
+  updateCube(dt);
+  checkGoal();
+  goal.rotation.z += dt * 0.8;
+  goal.position.y = goalBaseY + Math.sin(time * 2) * 0.12;
+  goalLight.position.copy(goal.position);
+  animatePortals(time);
+  animateEnv(dt, time);
+  updatePortalViews();
+  renderer.render(scene, camera);
+  updateFPS();
+}
+applyLook();
+
+// 内置默认关卡：fetch('levels.json') 失败（例如直接双击 file:// 打开）时回退为单关使用，
+// 保证游戏仍可运行；用本地服务器运行时则加载外部 levels.json 的全部关卡。
+const DEFAULT_LEVEL = {
+  name: "默认关卡",
+  hint: "🎯 把<span class='orange'>橙门</span>射向后墙高处、<span class='blue'>蓝门</span>射向前墙，走进蓝门登顶触碰发光目标。",
+  room:  { w: 16, d: 20, h: 6 },
+  start: { x: 0, y: 1.7, z: 3 },
+  platforms: [
+    { w: 2,   h: 1,   d: 2,   x: -4, y: 0.5, z: -3 },
+    { w: 1.5, h: 2,   d: 1.5, x: 4,  y: 1,   z: 2 },
+    { w: 3,   h: 0.5, d: 1.5, x: 0,  y: 0.25, z: 5 },
+    { w: 3,   h: 3,   d: 2,   x: 0,  y: 1.5, z: -8.9 }   // 解谜高台（跳跃不可达）
+  ],
+  interactCube: { x: -2, y: 0.35, z: 2 },
+  goal: { x: 0, y: 3.55, z: -8.05 }
+};
+
+// 切换关卡：先清掉上一关的所有 mesh 与传送门，再构建新关
+function clearLevel() {
+  if (levelGroup) {
+    scene.remove(levelGroup);
+    levelGroup.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        // 共享材质（墙/地/天花板/箱子）跨关卡复用，禁止 dispose
+        mats.forEach(m => { if (!SHARED_MATERIALS.has(m)) m.dispose(); });
+      }
+    });
+    levelGroup = null;
+  }
+  ['blue', 'orange'].forEach(t => {
+    if (portals[t]) { scene.remove(portals[t].group); if (portals[t].rt) portals[t].rt.dispose(); portals[t] = null; }
+  });
+  levelComplete = false;
+  cubeCarried = false; cubeVel.set(0, 0, 0); cubeTeleportCd = 0;   // 切关时复位方块状态
+  setCubeHint('');
+  const wb = document.getElementById('win-box');
+  if (wb) wb.style.display = 'none';
+}
+
+function loadLevelByIndex(i) {
+  currentLevelIndex = i;
+  clearLevel();
+  levelGroup = new THREE.Group();
+  scene.add(levelGroup);
+  buildLevel(levels[i]);
+  const tag = document.getElementById('level-tag');
+  if (tag) tag.textContent = '关卡 ' + (i + 1) + ' / ' + levels.length + ' · ' + (levels[i].name || '');
+  const hint = document.getElementById('level-hint');
+  if (hint) hint.innerHTML = levels[i].hint || '';
+}
+
+async function loadLevel() {
+  let data;
+  try {
+    const res = await fetch('levels.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    data = await res.json();
+    if (!data.levels || !data.levels.length) throw new Error('levels 字段为空');
+  } catch (e) {
+    data = { levels: [DEFAULT_LEVEL] };
+    const note = document.getElementById('loading');
+    note.style.display = 'block';
+    note.style.color = '#ffcc66';
+    note.textContent = '未加载 levels.json（' + e.message + '），使用内置默认单关。建议用本地服务器运行以加载全部关卡：python -m http.server';
+  }
+  levels = data.levels;
+  loadLevelByIndex(0);
+  animate();
+}
+loadLevel();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Portal 传送门 Demo（离线版）</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+canvas { display: block; }
+
+#crosshair {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 100;
+}
+#crosshair::before, #crosshair::after {
+  content: ''; position: absolute;
+  background: rgba(255,255,255,0.85);
+}
+#crosshair::before { width: 2px; height: 14px; left: -1px; top: -7px; }
+#crosshair::after { width: 14px; height: 2px; left: -7px; top: -1px; }
+
+#hud {
+  position: fixed; bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  color: #fff; font-size: 14px;
+  text-align: center; pointer-events: none; z-index: 100;
+  text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  line-height: 1.8;
+}
+#hud .key {
+  display: inline-block; padding: 2px 8px;
+  background: rgba(255,255,255,0.15); border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.25);
+  font-weight: bold;
+}
+
+#info {
+  position: fixed; top: 20px; left: 50%;
+  transform: translateX(-50%);
+  color: #fff; font-size: 13px;
+  text-align: center; pointer-events: none; z-index: 100;
+  text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  line-height: 1.7;
+}
+#info .blue { color: #4db8ff; font-weight: bold; }
+#info .orange { color: #ff8c42; font-weight: bold; }
+#level-tag { color: #ffd866; font-weight: bold; margin-bottom: 2px; }
+#level-hint { color: #cfeedf; margin-top: 2px; }
+#cube-hint { color: #9fe8b8; margin-top: 2px; min-height: 1em; font-weight: bold; }
+
+#loading {
+  position: fixed; bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  color: #88ccff; font-size: 12px; z-index: 150;
+  pointer-events: none;
+}
+
+#start-screen {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a15 100%);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 200; color: #fff; text-align: center; padding: 20px;
+}
+#start-screen h1 {
+  font-size: 48px; margin-bottom: 10px;
+  background: linear-gradient(135deg, #4db8ff, #ff8c42);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+#start-screen p { color: #aaa; margin-bottom: 30px; font-size: 16px; }
+#start-screen .controls {
+  display: grid; grid-template-columns: auto auto;
+  gap: 8px 20px; margin-bottom: 30px; font-size: 14px;
+}
+#start-screen .controls .label { color: #888; text-align: right; }
+#start-screen .controls kbd {
+  display: inline-block; padding: 3px 10px;
+  background: rgba(255,255,255,0.1); border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.2);
+  font-family: monospace; min-width: 28px; text-align: center;
+}
+#start-btn {
+  padding: 14px 48px; font-size: 18px;
+  background: linear-gradient(135deg, #4db8ff, #4090e0);
+  border: none; border-radius: 8px; color: #fff;
+  cursor: pointer; font-weight: bold;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+#start-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(77,184,255,0.4); }
+.start-sub-btn {
+  margin-top: 14px; padding: 12px 36px; font-size: 16px;
+  background: linear-gradient(135deg, #ff8c42, #e07030);
+  border: none; border-radius: 8px; color: #fff;
+  cursor: pointer; font-weight: bold; transition: transform 0.15s, box-shadow 0.15s;
+}
+.start-sub-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(255,140,66,0.4); }
+
+#err-box {
+  display: none; max-width: 560px; color: #ff8888;
+  font-size: 14px; line-height: 1.7; margin-top: 18px;
+}
+#err-box code { color: #ffcc66; }
+
+#win-box {
+  display: none; position: fixed; top: 84px; left: 50%;
+  transform: translateX(-50%); z-index: 300; text-align: center;
+  pointer-events: none;
+  background: rgba(18,40,34,0.85); border: 1px solid rgba(102,255,204,0.5);
+  border-radius: 12px; padding: 16px 30px; color: #fff;
+  box-shadow: 0 0 30px rgba(102,255,204,0.3);
+}
+#win-box h2 {
+  font-size: 30px; margin-bottom: 6px;
+  background: linear-gradient(135deg, #66ffcc, #4db8ff);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+#win-box p { color: #cfeedf; font-size: 14px; }
+
+#vignette {
+  position: fixed; inset: 0; pointer-events: none; z-index: 90;
+  box-shadow: inset 0 0 220px 70px rgba(0,0,0,0.5);
+}
+
+/* 帧率显示 */
+#fps {
+  position: fixed; top: 12px; right: 14px;
+  color: #b8ff9c; font-family: 'Consolas', 'Menlo', monospace;
+  font-size: 13px; z-index: 100;
+  text-shadow: 0 0 4px rgba(0,0,0,0.8);
+  pointer-events: none; background: rgba(0,0,0,0.35);
+  padding: 3px 8px; border-radius: 4px;
+}
+
+/* 暂停菜单 / 选关面板 */
+#pause-menu, #level-select {
+  position: fixed; inset: 0; z-index: 250;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(10,12,24,0.62); color: #fff; text-align: center;
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+}
+#level-select { z-index: 260; }
+.menu-card {
+  background: rgba(20,24,42,0.92); border: 1px solid rgba(120,160,255,0.35);
+  border-radius: 14px; padding: 28px 34px; min-width: 280px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+}
+.menu-card h2 {
+  font-size: 28px; margin-bottom: 18px;
+  background: linear-gradient(135deg, #4db8ff, #ff8c42);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.menu-btn {
+  display: block; width: 100%; margin: 10px 0; padding: 12px 20px; font-size: 16px;
+  background: linear-gradient(135deg, #4db8ff, #4090e0); border: none; border-radius: 8px;
+  color: #fff; cursor: pointer; font-weight: bold; transition: transform 0.12s, box-shadow 0.12s;
+}
+.menu-btn:hover { transform: scale(1.04); box-shadow: 0 0 24px rgba(77,184,255,0.4); }
+#level-buttons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+#level-buttons .menu-btn { margin: 0; }
+</style>
+</head>
+<body>
+
+<div id="crosshair"></div>
+<div id="vignette"></div>
+<div id="fps"></div>
+
+<div id="info">
+  <div id="level-tag"></div>
+  <div><span class="blue">蓝色传送门</span> = 鼠标左键 &nbsp;&nbsp; <span class="orange">橙色传送门</span> = 鼠标右键</div>
+  <div>传送门可放置在 墙面 / 地面 / 天花板 / 平台 表面 | 进入其中一个门，从另一个门出来</div>
+  <div id="level-hint"></div>
+  <div id="cube-hint"></div>
+</div>
+
+<div id="hud">
+  <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 移动 &nbsp;
+  <span class="key">空格</span> 跳跃 &nbsp;
+  <span class="key">鼠标</span> 视角 &nbsp;
+  <span class="key">Shift</span> 加速 &nbsp;
+  <span class="key">E</span>/<span class="key">Esc</span> 暂停 &nbsp;
+  <span class="key">F</span> 拾取/放下方块
+</div>
+
+<div id="loading">离线版 · 关卡数据由 levels.json 提供（建议用 python -m http.server 运行）</div>
+
+<div id="start-screen">
+  <h1>PORTAL</h1>
+  <p>传送门 · 离线小型 Demo</p>
+  <div class="controls">
+    <span class="label">移动</span><span><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></span>
+    <span class="label">视角</span><span>鼠标移动</span>
+    <span class="label">跳跃</span><span><kbd>空格</kbd></span>
+    <span class="label">加速</span><span><kbd>Shift</kbd></span>
+    <span class="label">蓝色门</span><span>鼠标左键（射向墙/地/台面）</span>
+    <span class="label">橙色门</span><span>鼠标右键（射向墙/地/台面）</span>
+    <span class="label">退出鼠标锁定</span><span><kbd>Esc</kbd></span>
+    <span class="label">暂停菜单</span><span><kbd>E</kbd> / <kbd>Esc</kbd></span>
+    <span class="label">拾取/放下方块</span><span><kbd>F</kbd></span>
+  </div>
+  <button id="start-btn">点击开始游戏</button>
+  <button id="ls-open-start" class="start-sub-btn">选择关卡</button>
+  <div id="err-box">
+    <p><b>⚠️ 未找到本地 Three.js</b></p>
+    <p>本项目已改为完全离线运行，Three.js 需放在 <code>libs/three.min.js</code>。</p>
+    <p>请双击项目根目录的 <code>下载依赖.bat</code> 获取（仅需联网一次），然后重新打开本页面。</p>
+  </div>
+</div>
+
+<div id="win-box">
+  <h2 id="win-title">关卡完成！</h2>
+  <p id="win-desc">你成功用传送门登上了高台 🎉 &nbsp;（按 <b>R</b> 重玩）</p>
+</div>
+
+<!-- 暂停菜单：游戏中按 E / Esc 弹出，冻结游戏但保留当前进度，不直接回主界面 -->
+<div id="pause-menu">
+  <div class="menu-card">
+    <h2>已暂停</h2>
+    <button class="menu-btn" id="pm-resume">继续游戏</button>
+    <button class="menu-btn" id="pm-select">选择关卡</button>
+    <button class="menu-btn" id="pm-restart">重新开始本关</button>
+    <button class="menu-btn" id="pm-mainmenu">返回主界面</button>
+  </div>
+</div>
+
+<!-- 选关面板：主界面与暂停菜单均可进入 -->
+<div id="level-select">
+  <div class="menu-card">
+    <h2>选择关卡</h2>
+    <div id="level-buttons"></div>
+    <button class="menu-btn" id="ls-back">返回</button>
+  </div>
+</div>
+
+<!-- 本地依赖：经典脚本，双击 file:// 也能加载，无需联网 -->
+<script src="libs/three.min.js"></script>
+<script src="js/world.js"></script>
+<script src="js/portal.js"></script>
+<script src="js/cube.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
